@@ -37,6 +37,8 @@ from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
 from data_formulator.db_manager import db_manager
 from data_formulator.example_datasets_config import EXAMPLE_DATASETS
+from data_formulator.auth import auth
+from data_formulator.auth_routes import auth_bp
 
 import queue
 from typing import Dict, Any
@@ -66,14 +68,28 @@ app.config['CLI_ARGS'] = {
     'disable_display_keys': os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
     'disable_database': os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
     'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
-    'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true'
+    'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
+    'keycloak_enabled': os.environ.get('KEYCLOAK_ENABLED', 'false').lower() == 'true'
 }
+
+# Add Keycloak config to Flask app config
+app.config.update({
+    'KEYCLOAK_ENABLED': os.environ.get('KEYCLOAK_ENABLED', 'false').lower() == 'true',
+    'KEYCLOAK_SERVER_URL': os.environ.get('KEYCLOAK_SERVER_URL'),
+    'KEYCLOAK_REALM': os.environ.get('KEYCLOAK_REALM'),
+    'KEYCLOAK_CLIENT_ID': os.environ.get('KEYCLOAK_CLIENT_ID'),
+    'KEYCLOAK_CLIENT_SECRET': os.environ.get('KEYCLOAK_CLIENT_SECRET'),
+})
+
+# Initialize auth AFTER config is loaded
+auth.init_app(app)
 
 # register blueprints
 # Only register tables blueprint if database is not disabled
 if not app.config['CLI_ARGS']['disable_database']:
     app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
+app.register_blueprint(auth_bp)
 
 # Get logger for this module (logging config moved to run_app function)
 logger = logging.getLogger(__name__)
@@ -104,6 +120,7 @@ def get_sample_datasets():
 
 
 @app.route("/", defaults={"path": ""})
+@auth.login_required
 def index_alt(path):
     logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html")
@@ -219,6 +236,7 @@ def get_app_config():
         "DISABLE_DATABASE": args['disable_database'],
         "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
         "PROJECT_FRONT_PAGE": args['project_front_page'],
+        "KEYCLOAK_ENABLED": args['keycloak_enabled'],
         "SESSION_ID": session_id
     }
     return flask.jsonify(config)
@@ -269,7 +287,8 @@ def run_app():
         'disable_display_keys': args.disable_display_keys,
         'disable_database': args.disable_database,
         'disable_file_upload': args.disable_file_upload,
-        'project_front_page': args.project_front_page
+        'project_front_page': args.project_front_page,
+        'keycloak_enabled': os.environ.get('KEYCLOAK_ENABLED', 'false').lower() == 'true'
     }
     
     # Update database manager state
